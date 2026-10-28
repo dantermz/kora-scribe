@@ -32,12 +32,12 @@ General-purpose AI scribes make this worse in a quieter way: they produce notes 
 
 ```mermaid
 flowchart LR
-    A[Ray-Ban Meta glasses] -->|audio| B[iPhone app]
-    B --> C[Muse Voice Transcribe]
-    C -->|timestamped transcript| D[Muse Glimmer<br/>drafts SOAP note]
+    A[Ray-Ban Meta<br/>glasses] -->|audio| B[iPhone app]
+    B --> C[Muse Voice<br/>Transcribe]
+    C -->|transcript| D[Muse Glimmer<br/>drafts SOAP note]
     D --> E{Verifier<br/>4 checks}
     E -->|flags| D
-    E -->|colour-coded note| F[Doctor reviews and signs]
+    E -->|colour-coded note| F[Doctor reviews<br/>and signs]
 ```
 
 ## Verification: four checks
@@ -52,9 +52,11 @@ Following the verification-layer pattern from Meta's hackathon agent workshops, 
 | 4 | **Coverage** | Checklist per visit type | A note that looks complete but is missing vitals, allergies, or the plan |
 
 Each line ends up as one of:
-- ✅ **Supported** by the clinician's words
-- 🟡 **Patient-reported**, kept, but labelled as such
-- 🔴 **Unsupported**, flagged for the doctor before signing
+- ✅ **Supported** by what was said
+- 🟡 **Needs a look**: off-topic content, a doubtful medical term (a slip while dictating or a transcription error), or mixed sources
+- 🔴 **Unsupported**: a number, finding or plan that the cited turns do not contain
+
+Lines that cite only the patient are tagged 💬 *patient-reported*, so the clinician can tell what was measured from what was told.
 
 ## Meta AI tooling
 
@@ -96,9 +98,10 @@ Judges must be able to see what is new, so this is explicit.
 ### Early findings
 
 - Diarization separated clinician and patient correctly on every turn of a synthetic 104-second consultation.
-- Keyword biasing fixed some clinical terms ("me torcí", "maléolo") but not all ("pulso pedio" was still heard as "pulso medio").
+- Keyword biasing fixed clinical terms that were first misheard ("me torcí" had come out as "me siento bien"; "maléolo" now has its accent).
+- The verifier flagged "pulso medio" as a doubtful term. Listening back, the clinician had actually said "pulso medio" instead of "pulso pedio": a slip while dictating, not a transcription error. Catching the clinician's own slips is useful too, and is another reason the clinician reviews before signing.
 - The same audio can produce slightly different transcripts on different runs, so the stored transcript is the single reference the note is verified against.
-- Transcription errors cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
+- Errors in the transcript itself cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
 
 ## Author
 
