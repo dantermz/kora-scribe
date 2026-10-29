@@ -88,7 +88,7 @@ Judges must be able to see what is new, so this is explicit.
 🚧 In progress. This README is the specification and will be updated as each part ships.
 
 - [x] Transcription test with Muse Voice Transcribe: Spanish, speaker diarization, turn IDs and timestamps (`scripts/transcribe_file.py`)
-- [ ] Glasses audio capture on iPhone
+- [x] Glasses audio capture on iPhone (`ios/`): records through the Ray-Ban Meta microphone over Bluetooth, straight to 16 kHz mono WAV
 - [ ] SOAP drafting with Muse Glimmer
 - [ ] Verifier: citation, source, scope, coverage
 - [ ] Review-and-sign interface
@@ -101,6 +101,8 @@ Judges must be able to see what is new, so this is explicit.
 - Keyword biasing fixed clinical terms that were first misheard ("me torcí" had come out as "me siento bien"; "maléolo" now has its accent).
 - The verifier flagged "pulso medio" as a doubtful term. Listening back, the clinician had actually said "pulso medio" instead of "pulso pedio": a slip while dictating, not a transcription error. Catching the clinician's own slips is useful too, and is another reason the clinician reviews before signing.
 - The same audio can produce slightly different transcripts on different runs, so the stored transcript is the single reference the note is verified against.
+- The Ray-Ban Meta microphone over Bluetooth was good enough for clinical dictation: in a 69-second dictation with the iPhone 2 to 3 metres away and locked halfway through, every drug and term came through correctly ("metformina", "losartán", "monofilamento", "pulso pedio", "hemoglobina glucosilada"), and so did the spoken correction of a blood pressure reading.
+- The first glasses test lost everything after 31 seconds because the iPhone auto-locked and iOS suspended the app. The capture app now keeps the screen awake, records in the background, and warns the clinician if a call or another app interrupts the recording.
 - Errors in the transcript itself cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
 
 ## Author

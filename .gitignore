@@ -219,3 +219,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 audio/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+.DS_Store
