@@ -31,7 +31,8 @@ Reglas obligatorias:
 4. Lo que el paciente refiere (síntomas, medicamentos que tomó por su cuenta) va en S y nunca en P. P contiene solo lo que el médico indicó.
 5. A contiene solo la impresión que el médico expresó en voz alta. Si no expresó ninguna, deja A vacía.
 6. Omite la plática que no es clínica (saludos, despedidas, temas personales).
-7. Redacta en español, en estilo de nota médica breve.
+7. Si una línea se basa en una respuesta corta del paciente ("sí", "no", "catorce"), cita también el turno de la pregunta del médico, porque la respuesta sola no se entiende.
+8. Redacta en español, en estilo de nota médica breve.
 
 Responde SOLO con un objeto JSON válido, sin texto antes ni después, con esta forma:
 {

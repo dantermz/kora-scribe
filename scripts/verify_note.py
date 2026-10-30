@@ -12,6 +12,9 @@ Checks (the first two and the fourth are plain code; the third asks a model):
   3. Scope     Muse Spark Open checks that no line says more than its turns, and flags
                non-clinical lines and doubtful medical terms.
   4. Coverage  the note has the minimum sections a general consultation needs.
+  5. Gaps      the transcript itself looks incomplete: a clinician question with no answer
+               after it, or a long stretch of audio with no transcribed speech. The note can
+               only be checked against what was transcribed, so lost speech must be flagged.
 
 Each line ends up green (supported), yellow (needs a look) or red (unsupported).
 Lines that cite only the patient are tagged as patient-reported. The note is never final until the clinician signs it.
@@ -139,9 +142,13 @@ def check_source(section: str, line: dict, turns: dict[str, dict], clinician: st
 
 SCOPE_PROMPT = """Eres un revisor de notas clínicas. Para cada línea recibes su texto y los turnos de la transcripción que cita. No juzgas si la medicina es correcta: solo si la línea es fiel a lo que se dijo.
 
+Algunos turnos traen "before": el turno anterior de la otra persona, normalmente la pregunta a la que responde. Úsalo para interpretar respuestas cortas: si el médico preguntó "¿Eres alérgica a algún medicamento?" y la respuesta fue "No, ninguno", la línea "Niega alergia a medicamentos" es fiel ("ok").
+
 Marca cada línea con uno de estos veredictos:
 - "ok": dice lo mismo que sus turnos, sin agregar nada.
-- "adds": agrega algo que los turnos no dicen (un diagnóstico, grado, dosis, unidad, fecha, causa o interpretación).
+- "adds": agrega algo que los turnos no dicen (un diagnóstico, grado, dosis, fecha, causa o interpretación).
+
+No cuentan como agregado: las unidades estándar implícitas en la práctica clínica (°C para temperatura, mmHg para presión arterial, lpm para frecuencia cardiaca, kg para peso, mg/dL para glucosa, mg para dosis de medicamentos que se expresan en miligramos), escribir con cifras lo que se dijo con palabras, y abreviaturas médicas comunes. Sí cuenta una unidad que cambia el valor o que no es la habitual para esa medición.
 - "not_clinical": no aporta información clínica: plática personal o social, planes o eventos del paciente, o preguntas del paciente que no describen un síntoma ni un antecedente (por ejemplo "¿podré ir a mi fiesta?" o "¿puedo jugar el torneo?"). Lo que el médico respondió a esa pregunta sí puede ir en el plan.
 - "doubtful_term": usa un término médico que no existe o que parece un error, ya sea al dictar o al transcribir (por ejemplo, una palabra parecida a un término real).
 
@@ -160,12 +167,22 @@ SCOPE_LABEL = {
 
 
 def check_scope(lines: list[dict], turns: dict[str, dict]) -> tuple[dict[str, list[tuple[str, str]]], dict]:
+    ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
+    previous = {t["id"]: ordered[i - 1] for i, t in enumerate(ordered) if i > 0}
+
+    def with_context(turn_id: str) -> dict:
+        item = {"id": turn_id, "text": turns[turn_id]["text"]}
+        before = previous.get(turn_id)
+        if before and before["speaker"] != turns[turn_id]["speaker"]:
+            item["before"] = {"id": before["id"], "text": before["text"]}
+        return item
+
     payload = [
         {
             "id": line["id"],
             "section": line["section"],
             "text": line["text"],
-            "turns": [{"id": c, "text": turns[c]["text"]} for c in line["cites"] if c in turns],
+            "turns": [with_context(c) for c in line["cites"] if c in turns],
         }
         for line in lines
     ]
@@ -225,7 +242,10 @@ def check_terms(line: dict) -> list[tuple[str, str]]:
 
 
 COVERAGE = {
-    "Motivo de consulta": lambda note: bool(note["S"]),
+    # Age and allergies alone are not a reason for the visit: S needs at least one other line.
+    "Motivo de consulta": lambda note: any(
+        not re.search(r"\banos\b|\bedad\b|alerg", plain(l["text"])) for l in note["S"]
+    ),
     "Alergias": lambda note: any("alerg" in plain(l["text"]) for s in SECTIONS for l in note[s]),
     "Signos vitales": lambda note: any(
         re.search(r"temperatura|presion|\bta\b|frecuencia|\bfc\b|\bfr\b|saturacion|spo2|peso|glucosa", plain(l["text"]))
@@ -238,6 +258,35 @@ COVERAGE = {
 
 def check_coverage(note: dict) -> list[str]:
     return [item for item, present in COVERAGE.items() if not present(note)]
+
+
+GAP_SECONDS = 5
+
+
+def check_gaps(ordered: list[dict], clinician: str) -> list[dict]:
+    """Signs that speech was lost before it reached the transcript."""
+    gaps = []
+    for i, turn in enumerate(ordered):
+        nxt = ordered[i + 1] if i + 1 < len(ordered) else None
+        text = turn["text"].strip()
+        if turn["speaker"] == clinician and text.endswith("?") and nxt and nxt["speaker"] == clinician:
+            question = text[text.rfind("¿"):] if "¿" in text else text[-60:]
+            gaps.append({
+                "after": turn["id"],
+                "kind": "unanswered_question",
+                "reason": f"Pregunta sin respuesta registrada: «{question}» ({turn['id']}). "
+                          "Posible respuesta del paciente perdida.",
+            })
+        if nxt and turn.get("end_ms") is not None and nxt.get("start_ms") is not None:
+            silence = (nxt["start_ms"] - turn["end_ms"]) / 1000
+            if silence >= GAP_SECONDS:
+                gaps.append({
+                    "after": turn["id"],
+                    "kind": "silence",
+                    "reason": f"{silence:.0f} s sin transcripción entre {turn['id']} y {nxt['id']}. "
+                              "Puede ser una pausa o voz que no se captó.",
+                })
+    return gaps
 
 
 # ---------------------------------------------------------------- main
@@ -274,14 +323,19 @@ def main(note_path: Path) -> None:
         line["status"] = max((level for level, _ in issues), key=RANK.get, default="green")
 
     missing = check_coverage(note)
+    ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
+    gaps = check_gaps(ordered, clinician)
+    if any(g["kind"] == "unanswered_question" for g in gaps):
+        missing.append("Respuestas del paciente (hay preguntas sin respuesta registrada)")
     red = sum(line["status"] == "red" for line in lines)
     yellow = sum(line["status"] == "yellow" for line in lines)
     result = {
         "source": note_path.name,
         "clinician_speaker": clinician,
-        "status": "needs_revision" if red else "ready_for_signoff",
+        "status": "needs_revision" if red else ("review_gaps" if gaps else "ready_for_signoff"),
         "summary": {"green": len(lines) - red - yellow, "yellow": yellow, "red": red},
         "coverage_missing": missing,
+        "transcript_gaps": gaps,
         "scope_check": scope_meta,
         "lines": lines,
     }
@@ -298,6 +352,10 @@ def main(note_path: Path) -> None:
         for issue in line["issues"]:
             print(f"       {ICON[issue['level']]} {issue['reason']}")
 
+    if gaps:
+        print("\nPosible audio perdido")
+        for gap in gaps:
+            print(f"  🟡 {gap['reason']}")
     print(f"\nCoverage: {'complete' if not missing else 'missing ' + ', '.join(missing)}")
     print(f"Lines: {result['summary']['green']} ✅  {yellow} 🟡  {red} 🔴")
     print(f"Status: {result['status']} · the clinician must review and sign before the note is final")
