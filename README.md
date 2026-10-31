@@ -40,6 +40,8 @@ flowchart LR
     E -->|colour-coded note| F[Doctor reviews<br/>and signs]
 ```
 
+Prompts and clinical output are in Spanish on purpose: the consultations and the notes are for Mexican clinicians. Code and documentation are in English.
+
 ## Verification: five checks
 
 Following the verification-layer pattern from Meta's hackathon agent workshops, the checks run outside the model's control, at the moment the note tries to move forward.
@@ -58,6 +60,23 @@ Each line ends up as one of:
 - 🔴 **Unsupported**: a number, finding or plan that the cited turns do not contain
 
 Lines that cite only the patient are tagged 💬 *patient-reported*, so the clinician can tell what was measured from what was told.
+
+## Review and sign
+
+A local page (`review/index.html`, served by `scripts/review_server.py`) puts the note and the transcript side by side:
+
+- Click a line to highlight the transcript turns it cites; press ▶ to hear exactly those turns.
+- Lost-audio warnings sit in the transcript where the speech went missing, with a button to play that stretch.
+- The clinician can correct, accept, remove or add lines. Every change is kept next to what the model proposed.
+- **Signing is blocked** until every 🔴 line has been decided and every lost-audio warning has been reviewed.
+- The signed record (`<case>.signed.json`) holds the final note, where each line came from (model, corrected by the clinician, added by the clinician), the full audit of changes, and SHA-256 hashes of the note and of the transcript it was checked against.
+
+```bash
+python scripts/run_pipeline.py audio/consulta.wav    # transcribe, draft, verify
+python scripts/review_server.py audio/consulta       # review and sign at http://localhost:8770
+```
+
+Everything runs on the clinician's machine; the page talks only to the local server.
 
 ## Meta AI tooling
 
@@ -94,7 +113,7 @@ Judges must be able to see what is new, so this is explicit.
 - [ ] SOAP drafting with Muse Glimmer
 - [x] Verifier: citation, source, scope, coverage, lost audio (`scripts/verify_note.py`)
 - [x] One-command pipeline: audio to verified note (`scripts/run_pipeline.py`)
-- [ ] Review-and-sign interface
+- [x] Review-and-sign interface: cited turns, audio playback per turn, lost-audio warnings, edits with audit trail, blocked signature (`review/`, `scripts/review_server.py`)
 - [ ] Synthetic test consultations with expected facts
 - [ ] Demo video
 
@@ -108,6 +127,7 @@ Judges must be able to see what is new, so this is explicit.
 - The first glasses test lost everything after 31 seconds because the iPhone auto-locked and iOS suspended the app. The capture app now keeps the screen awake, records in the background, and warns the clinician if a call or another app interrupts the recording.
 - With the glasses, the patient's voice one metre away is much weaker than the wearer's. In a synthetic consultation the chief complaint ("me torcí el tobillo") never reached the transcript, and the note still passed every line check: a verifier can only check a note against what was transcribed. This led to the fifth check, which flags unanswered clinician questions and long silences so the clinician knows what to confirm, and to a simple practice that fixes it at the source: the clinician recaps the history aloud before examining.
 - A model-based check is not deterministic: the same line ("Temperatura 36.8 °C") passed on one run and was flagged on another. Numbers, sources and lost audio are therefore checked in code; the model is a second layer.
+- Listening back is part of the review. The transcript had "poquito pero con gelada" (unintelligible); the draft papered over it as "pudo caminar poquito pero con dificultad", and the scope check flagged that line 🔴. Playing the two cited turns from the review page, the patient's word was clearly "cojeando". The clinician corrected the line in seconds, and the signed record keeps both versions.
 - Errors in the transcript itself cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
 
 ## Author
