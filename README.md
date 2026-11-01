@@ -80,6 +80,28 @@ python scripts/review_server.py audio/consulta       # review and sign at http:/
 
 Everything runs on the clinician's machine; the page talks only to the local server.
 
+## Evaluation: which model drafts
+
+`eval/eval.py` drafts the same transcripts with each model, verifies every note with the same verifier (Muse Spark Open), and scores it in code against the expected facts and traps written for each synthetic consultation (`eval/cases.json`, from `eval/dictados_sinteticos.md`). Same prompt for both models, two runs each:
+
+| | Muse Spark Open | Muse Glimmer (reasoning low) |
+|---|---|---|
+| Case 1, hypertension: expected facts found | 14/14 · 14/14 | 14/14 · 14/14 |
+| Case 2, ankle sprain: expected facts found | 21/23 · 21/23 | 20/23 · 20/23 |
+| Traps hit (case 1 + case 2) | 1/9 · 1/9 (small talk about a football final written into the plan) | **0/9 · 0/9** |
+| Drafting time | 16–134 s | **4–7 s** |
+| Output tokens per note | 5,000–9,400 | **~900–1,400** |
+
+Two of the 23 facts in case 2 were never in the transcript (the glasses lost "cojeando" and "hoy amaneció más hinchado"), so no drafter can find them; Glimmer also left out "ayer", which only the clinician's recap said. **Muse Glimmer drafts; Muse Spark Open verifies**, so the note is always checked by a different model from the one that wrote it.
+
+The first prompt produced a useful lesson. Its rules ("write only what was said, add nothing") were read literally by Glimmer, which copied the transcript into the note instead of writing one, at any reasoning level; Spark Open wrote proper clinical lines but filled in a word it could not understand. One prompt fix helped both: rewrite in clinical style with a short example, and write **[ininteligible]** instead of guessing.
+
+## Running Muse Glimmer
+
+Glimmer runs on a single Modal GPU (RTX PRO 6000, NVIDIA's NVFP4 checkpoint, SGLang), deployed with the open-source scripts in [jscott3201/llm-tuning](https://github.com/jscott3201/llm-tuning/tree/main/glimmer). Two changes were needed to put the endpoint behind an API key: attach a Modal secret holding `API_KEY` to the serving class, and send that key on the server's own startup calls (health check, warm-up and snapshot requests), which otherwise fail with 401 and keep the container restarting. The endpoint scales to zero after 15 idle minutes; the whole hackathon used a few dollars of GPU time.
+
+Then point the drafter at it in `.env` (see `.env.example`): `DRAFT_BASE_URL`, `DRAFT_API_KEY`, `DRAFT_MODEL=muse-glimmer`, `DRAFT_REASONING=low`.
+
 ## Meta AI tooling
 
 | Component | Role |
@@ -87,7 +109,7 @@ Everything runs on the clinician's machine; the page talks only to the local ser
 | Ray-Ban Meta glasses + Wearables Device Access Toolkit | Hands-free audio capture |
 | Muse Voice Transcribe (Meta Model API) | Speech to text |
 | Muse Glimmer (open weights, on Modal GPU) | SOAP note drafting |
-| Muse Spark Open (open weights, on Baseten) | Scope check in the verifier |
+| Muse Spark Open (open weights, on Baseten) | Verifier (scope and recap checks), and the baseline drafter in the evaluation |
 | Muse Code | Development |
 
 Note generation and verification run on open-weight models. Mexico's health-record regulation (NOM-024) pushes toward data sovereignty, and clinical notes are among the most sensitive records a system holds, so a deployment path that does not depend on a closed hosted API matters.
@@ -111,13 +133,13 @@ Judges must be able to see what is new, so this is explicit.
 
 - [x] Transcription test with Muse Voice Transcribe: Spanish, speaker diarization, turn IDs and timestamps (`scripts/transcribe_file.py`)
 - [x] Glasses audio capture on iPhone (`ios/`): records through the Ray-Ban Meta microphone over Bluetooth, straight to 16 kHz mono WAV
-- [x] SOAP drafting with citations, on Muse Spark Open (`scripts/draft_note.py`)
-- [ ] SOAP drafting with Muse Glimmer
+- [x] SOAP drafting with citations (`scripts/draft_note.py`), on Muse Glimmer self-hosted on Modal, or Muse Spark Open
+- [x] Evaluation of both drafters against expected facts and traps (`eval/eval.py`)
 - [x] Verifier: citation, source, scope, coverage, lost audio, recap (`scripts/verify_note.py`)
 - [x] Phrase-level citations: long turns split by sentence and pause, no re-transcription (`scripts/segment_turns.py`)
 - [x] One-command pipeline: audio to verified note (`scripts/run_pipeline.py`)
 - [x] Review-and-sign interface: cited turns, audio playback per turn, lost-audio warnings, edits with audit trail, blocked signature (`review/`, `scripts/review_server.py`)
-- [ ] Synthetic test consultations with expected facts
+- [x] Synthetic test consultations with expected facts (`eval/dictados_sinteticos.md`, `eval/cases.json`)
 - [ ] Demo video
 
 ### Early findings

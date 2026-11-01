@@ -1,0 +1,69 @@
+{
+  "_about": "Expected facts and traps for the synthetic consultations in dictados_sinteticos.md. Each fact is matched in code against the drafted note: every pattern in 'all' must appear (accent-insensitive, lower case) in one line of the listed sections. A trap is a pattern that must NOT appear. Recordings stay on the author's machine (audio/ is git-ignored).",
+  "cases": [
+    {
+      "id": "case1",
+      "title": "Hypertension, with a spoken correction and small talk",
+      "recordings": ["lentes6"],
+      "facts": [
+        {"id": "cefalea en la nuca", "sections": "S", "all": ["cefalea|dolor de cabeza", "nuca|occipital"]},
+        {"id": "algunas mananas", "sections": "S", "all": ["manana"]},
+        {"id": "losartan 50 mg cada 24 h (actual)", "sections": "S", "all": ["losartan", "50"]},
+        {"id": "TA ~150 referida", "sections": "S", "all": ["150|ciento cincuenta"]},
+        {"id": "TA 148/92", "sections": "O", "all": ["148\\s*/\\s*92"]},
+        {"id": "FC 82", "sections": "O", "all": ["\\b82\\b"]},
+        {"id": "peso 74 kg", "sections": "O", "all": ["\\b74\\b"]},
+        {"id": "ritmico sin soplos", "sections": "O", "all": ["ritmic", "soplo"]},
+        {"id": "sin edema", "sections": "O", "all": ["edema"]},
+        {"id": "losartan 50 mg cada 12 h (nuevo)", "sections": "P", "all": ["losartan", "50", "12"]},
+        {"id": "reducir sal", "sections": "P", "all": ["\\bsal\\b"]},
+        {"id": "quimica sanguinea con creatinina y potasio", "sections": "P", "all": ["creatinina", "potasio"]},
+        {"id": "automonitoreo de TA 3 dias por semana", "sections": "P", "all": ["casa|automonitoreo", "\\b3\\b|tres"]},
+        {"id": "cita en un mes", "sections": "P", "all": ["\\bmes\\b"]}
+      ],
+      "traps": [
+        {"id": "uses the corrected-away 140/90", "sections": "SOAP", "any": ["140\\s*/\\s*90"]},
+        {"id": "patient-reported 150 written as a measurement in O", "sections": "O", "any": ["150", "ciento cincuenta"]},
+        {"id": "wedding small talk in the note", "sections": "SOAP", "any": ["boda", "nieta"]},
+        {"id": "unstated assessment", "sections": "SOAP", "any": ["descontrol", "crisis hipertensiva", "urgencia hipertensiva"]}
+      ]
+    },
+    {
+      "id": "case2",
+      "title": "Ankle sprain in a teenager",
+      "recordings": ["lentes5"],
+      "facts": [
+        {"id": "14 anos", "sections": "S", "all": ["\\b14\\b|catorce"]},
+        {"id": "torcedura jugando futbol", "sections": "S", "all": ["torc|torsion|esguince", "futbol"]},
+        {"id": "tobillo derecho", "sections": "SO", "all": ["tobillo", "derech"]},
+        {"id": "ayer", "sections": "S", "all": ["ayer"]},
+        {"id": "marcha con cojera", "sections": "S", "all": ["cojea|cojera|claudica"]},
+        {"id": "aumento de volumen hoy", "sections": "S", "all": ["hinchad|aumento de volumen|edema"]},
+        {"id": "dolor 6/10", "sections": "S", "all": ["\\b6\\s*/\\s*10|6 de 10|seis"]},
+        {"id": "ibuprofeno por su cuenta (referido)", "sections": "S", "all": ["ibuprofeno"]},
+        {"id": "niega alergias", "sections": "S", "all": ["alerg"]},
+        {"id": "inflamacion cara lateral", "sections": "O", "all": ["inflamacion", "lateral"]},
+        {"id": "equimosis leve", "sections": "O", "all": ["equimosis"]},
+        {"id": "dolor en ligamento peroneoastragalino anterior", "sections": "O", "all": ["peroneoastragalino"]},
+        {"id": "sin dolor en borde posterior del maleolo", "sections": "O", "all": ["posterior"]},
+        {"id": "apoya y da 4 pasos", "sections": "O", "all": ["\\b4\\b|cuatro", "paso"]},
+        {"id": "pulso pedio presente", "sections": "O", "all": ["pulso pedio"]},
+        {"id": "temperatura 36.8", "sections": "O", "all": ["36[.,]8"]},
+        {"id": "esguince", "sections": "A", "all": ["esguince"]},
+        {"id": "venda elastica", "sections": "P", "all": ["venda"]},
+        {"id": "hielo 20 min 3 veces al dia", "sections": "P", "all": ["hielo", "\\b20\\b|veinte"]},
+        {"id": "pie elevado", "sections": "P", "all": ["elev"]},
+        {"id": "paracetamol 500 mg cada 8 h", "sections": "P", "all": ["paracetamol", "500", "\\b8\\b|ocho"]},
+        {"id": "sin deporte 2 semanas", "sections": "P", "all": ["deport", "\\b2\\b|dos"]},
+        {"id": "radiografia si no mejora en una semana", "sections": "P", "all": ["radiograf"]}
+      ],
+      "traps": [
+        {"id": "ibuprofen written as the clinician's plan", "sections": "P", "any": ["ibuprofeno"]},
+        {"id": "uses the corrected-away 36.5", "sections": "SOAP", "any": ["36[.,]5"]},
+        {"id": "football final small talk in the note", "sections": "SOAP", "any": ["torneo", "la final"]},
+        {"id": "unstated sprain grade or X-ray result", "sections": "SOAP", "any": ["grado", "rx negativ", "radiografia (normal|negativa)"]},
+        {"id": "unintelligible word filled in", "sections": "S", "any": ["dificultad"]}
+      ]
+    }
+  ]
+}

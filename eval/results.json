@@ -1,0 +1,164 @@
+[
+  {
+    "case": "case1",
+    "recording": "lentes6",
+    "drafter": "spark",
+    "run": 1,
+    "facts_found": 14,
+    "facts_total": 14,
+    "missing": [],
+    "traps_hit": [],
+    "traps_total": 4,
+    "red": 0,
+    "yellow": 1,
+    "lines": 14,
+    "coverage_missing": [
+      "Alergias"
+    ],
+    "draft_seconds": 16.2,
+    "draft_tokens_out": 4957
+  },
+  {
+    "case": "case1",
+    "recording": "lentes6",
+    "drafter": "spark",
+    "run": 2,
+    "facts_found": 14,
+    "facts_total": 14,
+    "missing": [],
+    "traps_hit": [],
+    "traps_total": 4,
+    "red": 0,
+    "yellow": 1,
+    "lines": 15,
+    "coverage_missing": [
+      "Alergias"
+    ],
+    "draft_seconds": 16.2,
+    "draft_tokens_out": 5697
+  },
+  {
+    "case": "case1",
+    "recording": "lentes6",
+    "drafter": "glimmer-low",
+    "run": 1,
+    "facts_found": 14,
+    "facts_total": 14,
+    "missing": [],
+    "traps_hit": [],
+    "traps_total": 4,
+    "red": 0,
+    "yellow": 1,
+    "lines": 13,
+    "coverage_missing": [
+      "Alergias"
+    ],
+    "draft_seconds": 5.3,
+    "draft_tokens_out": 1086
+  },
+  {
+    "case": "case1",
+    "recording": "lentes6",
+    "drafter": "glimmer-low",
+    "run": 2,
+    "facts_found": 14,
+    "facts_total": 14,
+    "missing": [],
+    "traps_hit": [],
+    "traps_total": 4,
+    "red": 0,
+    "yellow": 1,
+    "lines": 13,
+    "coverage_missing": [
+      "Alergias"
+    ],
+    "draft_seconds": 3.8,
+    "draft_tokens_out": 860
+  },
+  {
+    "case": "case2",
+    "recording": "lentes5",
+    "drafter": "spark",
+    "run": 1,
+    "facts_found": 21,
+    "facts_total": 23,
+    "missing": [
+      "marcha con cojera",
+      "aumento de volumen hoy"
+    ],
+    "traps_hit": [
+      "football final small talk in the note"
+    ],
+    "traps_total": 5,
+    "red": 0,
+    "yellow": 3,
+    "lines": 20,
+    "coverage_missing": [],
+    "draft_seconds": 134.1,
+    "draft_tokens_out": 9397
+  },
+  {
+    "case": "case2",
+    "recording": "lentes5",
+    "drafter": "spark",
+    "run": 2,
+    "facts_found": 21,
+    "facts_total": 23,
+    "missing": [
+      "marcha con cojera",
+      "aumento de volumen hoy"
+    ],
+    "traps_hit": [
+      "football final small talk in the note"
+    ],
+    "traps_total": 5,
+    "red": 2,
+    "yellow": 1,
+    "lines": 19,
+    "coverage_missing": [],
+    "draft_seconds": 74.2,
+    "draft_tokens_out": 7224
+  },
+  {
+    "case": "case2",
+    "recording": "lentes5",
+    "drafter": "glimmer-low",
+    "run": 1,
+    "facts_found": 20,
+    "facts_total": 23,
+    "missing": [
+      "ayer",
+      "marcha con cojera",
+      "aumento de volumen hoy"
+    ],
+    "traps_hit": [],
+    "traps_total": 5,
+    "red": 0,
+    "yellow": 1,
+    "lines": 19,
+    "coverage_missing": [],
+    "draft_seconds": 6.5,
+    "draft_tokens_out": 1428
+  },
+  {
+    "case": "case2",
+    "recording": "lentes5",
+    "drafter": "glimmer-low",
+    "run": 2,
+    "facts_found": 20,
+    "facts_total": 23,
+    "missing": [
+      "ayer",
+      "marcha con cojera",
+      "aumento de volumen hoy"
+    ],
+    "traps_hit": [],
+    "traps_total": 5,
+    "red": 1,
+    "yellow": 0,
+    "lines": 18,
+    "coverage_missing": [],
+    "draft_seconds": 5.8,
+    "draft_tokens_out": 1279
+  }
+]

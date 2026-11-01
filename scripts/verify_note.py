@@ -190,7 +190,7 @@ def check_scope(lines: list[dict], turns: dict[str, dict]) -> tuple[dict[str, li
         }
         for line in lines
     ]
-    client, model = make_client(load_env())
+    client, model = make_client(load_env(), "VERIFY")
     response = client.chat.completions.create(
         model=model,
         temperature=0,
@@ -247,7 +247,7 @@ RECAP_RUNS = 2  # a model check is not deterministic; two independent passes, co
 
 
 def ask_recap(payload: list[dict]) -> tuple[dict | None, dict]:
-    client, model = make_client(load_env())
+    client, model = make_client(load_env(), "VERIFY")
     response = client.chat.completions.create(
         model=model,
         temperature=0,
