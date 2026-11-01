@@ -445,7 +445,8 @@ function renderStatus() {
   let label, cls;
   if (signed) [label, cls] = ["Firmada", "ready"];
   else if (pendingRed()) [label, cls] = ["Requiere corrección", "revise"];
-  else if (blockers().length) [label, cls] = ["Revisar audio perdido", "gaps"];
+  else if (gapNodes.length > gapAcks.size) [label, cls] = ["Revisar audio perdido", "gaps"];
+  else if (blockers().length) [label, cls] = ["Revisar antes de firmar", "gaps"];
   else [label, cls] = ["Lista para firmar", "ready"];
   pill.textContent = label;
   pill.className = "pill " + cls;
@@ -548,7 +549,8 @@ function renderNote() {
   if (missing.length) {
     const warn = el("div", "banner missing" + (missingAck ? " done" : ""));
     warn.appendChild(el("div", "", "⚠ Falta en la nota: " + missing.join(", ") +
-      ". Puede estar en audio que no se captó: revisa los avisos de la transcripción."));
+      ". Puede que no se haya preguntado, o que se dijo y no se captó" +
+      (gapNodes.length ? ": revisa los avisos de la transcripción." : ".")));
     const label = el("label", "ack");
     const check = el("input");
     check.type = "checkbox";
