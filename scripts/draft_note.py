@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SYSTEM_PROMPT = """Eres un asistente de documentación clínica. Tu único trabajo es ESTRUCTURAR en formato SOAP lo que se dijo en una consulta. No diagnosticas, no recomiendas y no agregas nada.
 
-Recibes la transcripción como una lista de turnos. Cada turno tiene un id (T0, T1, ...), un hablante (A, B, ...) y un texto. No sabes de antemano qué hablante es el médico: dedúcelo por el contenido (quien explora, mide signos e indica el plan).
+Recibes la transcripción como una lista de turnos. Cada turno tiene un id (T0, T1, ...), un hablante (A, B, ...) y un texto. Los turnos largos vienen partidos en frases (T13a, T13b, ...): cita la frase exacta de donde sale cada dato, no todas las frases del turno. No sabes de antemano qué hablante es el médico: dedúcelo por el contenido (quien explora, mide signos e indica el plan).
 
 Reglas obligatorias:
 1. Cada línea de la nota debe citar en "cites" los ids de los turnos que la sustentan. Sin cita, no hay línea.

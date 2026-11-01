@@ -136,6 +136,10 @@ async def transcribe(path: Path) -> None:
     )
     print(f"\n{len(turns)} turns · saved {json_path.name}, {text_path.name}, {events_path.name}")
 
+    # Long turns are split into phrases using the word timing in the events (see segment_turns.py).
+    import segment_turns
+    segment_turns.main(str(path.with_suffix("")))
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

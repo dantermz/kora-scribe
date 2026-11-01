@@ -269,7 +269,9 @@ def check_gaps(ordered: list[dict], clinician: str) -> list[dict]:
     for i, turn in enumerate(ordered):
         nxt = ordered[i + 1] if i + 1 < len(ordered) else None
         text = turn["text"].strip()
-        if turn["speaker"] == clinician and text.endswith("?") and nxt and nxt["speaker"] == clinician:
+        same_turn = nxt is not None and nxt.get("turn", nxt["id"]) == turn.get("turn", turn["id"])
+        if (turn["speaker"] == clinician and text.endswith("?") and nxt and nxt["speaker"] == clinician
+                and not same_turn):
             question = text[text.rfind("¿"):] if "¿" in text else text[-60:]
             gaps.append({
                 "after": turn["id"],
@@ -318,11 +320,21 @@ def main(note_path: Path) -> None:
         if not any("Término dudoso" in r for _, r in issues):
             issues += check_terms(line)
         line["issues"] = [{"level": level, "reason": reason} for level, reason in issues]
-        speakers = {turns[c]["speaker"] for c in line["cites"] if c in turns}
-        line["patient_reported"] = bool(speakers) and clinician not in speakers
+        # Patient-reported: what the line states comes from the patient. Citing the clinician's
+        # question next to the answer (drafting rule 7) does not make it the clinician's finding.
+        content = [turns[c] for c in line["cites"] if c in turns
+                   and not (turns[c]["speaker"] == clinician and turns[c]["text"].strip().endswith("?"))]
+        line["patient_reported"] = bool(content) and all(t["speaker"] != clinician for t in content)
         line["status"] = max((level for level, _ in issues), key=RANK.get, default="green")
 
-    missing = check_coverage(note)
+    # Small talk the scope check marked as non-clinical does not count toward coverage
+    # (a question about a football tournament is not a reason for the visit).
+    counted = {
+        section: [l for l in lines if l["section"] == section
+                  and not any(SCOPE_LABEL["not_clinical"] in i["reason"] for i in l["issues"])]
+        for section in SECTIONS
+    }
+    missing = check_coverage(counted)
     ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
     gaps = check_gaps(ordered, clinician)
     if any(g["kind"] == "unanswered_question" for g in gaps):

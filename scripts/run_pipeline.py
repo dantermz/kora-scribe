@@ -2,6 +2,7 @@
 
 Usage:
     python scripts/run_pipeline.py audio/lentes3.wav
+    python scripts/run_pipeline.py audio/lentes3.wav --no-transcribe   # reuse the saved events
 
 Steps: transcribe (Muse Voice Transcribe) -> draft the SOAP note -> verify it.
 Writes <name>.transcript.json, <name>.note.json and <name>.verification.json next to the audio.
@@ -18,6 +19,7 @@ import wave
 from pathlib import Path
 
 import draft_note
+import segment_turns
 import transcribe_file
 import verify_note
 
@@ -41,12 +43,18 @@ def step(title: str) -> float:
     return time.time()
 
 
-def main(audio: Path) -> None:
-    audio = ensure_wav(audio)
-    base = audio.with_suffix("")
-
-    t = step("1/3  Transcribe (Muse Voice Transcribe)")
-    asyncio.run(transcribe_file.transcribe(audio))
+def main(audio: Path, transcribe: bool = True) -> None:
+    if transcribe:
+        audio = ensure_wav(audio)
+        base = audio.with_suffix("")
+        t = step("1/3  Transcribe (Muse Voice Transcribe)")
+        asyncio.run(transcribe_file.transcribe(audio))
+    else:
+        base = audio.with_name(audio.name.split(".")[0])
+        if not base.with_name(base.name + ".events.jsonl").exists():
+            base = base.with_name(base.name + "-16k")
+        t = step("1/3  Re-segment the saved transcript (no new transcription)")
+        segment_turns.main(str(base))
     print(f"({time.time() - t:.0f} s)")
 
     t = step("2/3  Draft SOAP note")
@@ -61,6 +69,7 @@ def main(audio: Path) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if len(args) != 1:
         sys.exit(__doc__)
-    main(Path(sys.argv[1]))
+    main(Path(args[0]), transcribe="--no-transcribe" not in sys.argv)
