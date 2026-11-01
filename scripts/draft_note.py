@@ -32,7 +32,8 @@ Reglas obligatorias:
 5. A contiene solo la impresión que el médico expresó en voz alta. Si no expresó ninguna, deja A vacía.
 6. Omite la plática que no es clínica (saludos, despedidas, temas personales).
 7. Si una línea se basa en una respuesta corta del paciente ("sí", "no", "catorce"), cita también el turno de la pregunta del médico, porque la respuesta sola no se entiende.
-8. Redacta en español, en estilo de nota médica breve.
+8. Si el médico resume en voz alta lo que le contó el paciente ("Entonces, ..."), cita también esa frase del resumen en las líneas de S que correspondan: la voz del médico suele transcribirse mejor que la del paciente. Si el resumen y lo que se transcribió del paciente no coinciden en un dato, no juntes las dos versiones en una línea: escribe la del resumen y cita los dos turnos (el médico confirmará).
+9. Redacta en español, en estilo de nota médica breve.
 
 Responde SOLO con un objeto JSON válido, sin texto antes ni después, con esta forma:
 {
@@ -80,21 +81,26 @@ def main(transcript_path: Path) -> None:
 
     client, model = make_client(load_env())
     print(f"Drafting with {model} · {len(turns)} turns")
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(compact, ensure_ascii=False)},
-        ],
-    )
-    raw = response.choices[0].message.content or ""
-    try:
-        note = extract_json(raw)
-    except (ValueError, json.JSONDecodeError) as error:
-        debug = transcript_path.with_name(transcript_path.name.replace(".transcript.json", ".note.raw.txt"))
-        debug.write_text(raw, encoding="utf-8")
-        sys.exit(f"Could not parse the note ({error}). Raw answer saved to {debug.name}")
+    # The model occasionally answers with no JSON (an empty or cut-off reply); ask again, up to 3 times.
+    for attempt in range(1, 4):
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(compact, ensure_ascii=False)},
+            ],
+        )
+        raw = response.choices[0].message.content or ""
+        try:
+            note = extract_json(raw)
+            break
+        except (ValueError, json.JSONDecodeError) as error:
+            debug = transcript_path.with_name(transcript_path.name.replace(".transcript.json", ".note.raw.txt"))
+            debug.write_text(raw, encoding="utf-8")
+            if attempt == 3:
+                sys.exit(f"Could not parse the note after 3 tries ({error}). Last answer saved to {debug.name}")
+            print(f"  attempt {attempt}: no valid JSON in the answer ({error}); asking again")
 
     note["model"] = model
     note["source"] = transcript_path.name

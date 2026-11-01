@@ -40,6 +40,7 @@
   .line:hover { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   .line.active { box-shadow: 0 0 0 2px var(--blue); }
   .chip.cite { cursor: pointer; }
+  .chip.compare { background: var(--yellow-bg); color: var(--yellow); }
   .chip.cite:hover { background: var(--blue-bg); color: var(--blue); }
   .panel.sticky { position: sticky; top: 68px; max-height: calc(100vh - 88px); overflow-y: auto; }
   .turn { transition: background .2s; border-radius: 6px; }
@@ -385,20 +386,22 @@ function renderLine(line) {
   if (line.action === "edited") row.appendChild(el("div", "was", "Decía: " + line.original));
 
   const meta = el("div", "meta");
-  for (const cite of line.cites) {
-    const chip = el("span", "chip cite", cite);
+  const related = line.cites.concat(line.compare || []);  // the recap turns a conflict points to
+  for (const cite of related) {
+    const isCompare = !line.cites.includes(cite);
+    const chip = el("span", "chip cite" + (isCompare ? " compare" : ""), (isCompare ? "resumen " : "") + cite);
     chip.title = "Ver turno " + cite;
     chip.addEventListener("click", e => { e.stopPropagation(); select(row, [cite]); });
     meta.appendChild(chip);
   }
-  if (line.cites.length) row.addEventListener("click", () => select(row, line.cites));
+  if (related.length) row.addEventListener("click", () => select(row, related));
   if (hasAudio && line.cites.length) {
     const listen = el("span", "chip listen", "▶ Escuchar");
     listen.title = "Escuchar los turnos citados";
     listen.addEventListener("click", e => {
       e.stopPropagation();
-      select(row, line.cites, true);
-      playTurns(line.cites);
+      select(row, related, true);
+      playTurns(related);
     });
     meta.appendChild(listen);
   }

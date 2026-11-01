@@ -35,14 +35,14 @@ flowchart LR
     A[Ray-Ban Meta<br/>glasses] -->|audio| B[iPhone app]
     B --> C[Muse Voice<br/>Transcribe]
     C -->|transcript| D[Muse Glimmer<br/>drafts SOAP note]
-    D --> E{Verifier<br/>5 checks}
+    D --> E{Verifier<br/>6 checks}
     E -->|flags| D
     E -->|colour-coded note| F[Doctor reviews<br/>and signs]
 ```
 
 Prompts and clinical output are in Spanish on purpose: the consultations and the notes are for Mexican clinicians. Code and documentation are in English.
 
-## Verification: five checks
+## Verification: six checks
 
 Following the verification-layer pattern from Meta's hackathon agent workshops, the checks run outside the model's control, at the moment the note tries to move forward.
 
@@ -53,6 +53,7 @@ Following the verification-layer pattern from Meta's hackathon agent workshops, 
 | 3 | **Scope** | Model (Muse Spark Open) | A line that says more than its citation, e.g. "patient reports chest pain" upgraded to "angina" |
 | 4 | **Coverage** | Checklist per visit type | A note that looks complete but is missing vitals, allergies, or the plan |
 | 5 | **Lost audio** | Code | A clinician question with no recorded answer, or a long stretch with no transcribed speech: signs that the patient said something the transcript never captured |
+| 6 | **Recap** | Model (Muse Spark Open), two passes | The clinician recaps the history aloud; the recap is compared fact by fact with what was transcribed from the patient. A different value for the same fact (where, when, how much, took it or not) flags the line: one of the two was misheard |
 
 Each line ends up as one of:
 - ✅ **Supported** by what was said
@@ -65,7 +66,8 @@ Lines that cite only the patient are tagged 💬 *patient-reported*, so the clin
 
 A local page (`review/index.html`, served by `scripts/review_server.py`) puts the note and the transcript side by side:
 
-- Click a line to highlight the transcript turns it cites; press ▶ to hear exactly those turns.
+- Long turns are split into phrases using the word timing in the transcription events, so each line cites the exact phrase it comes from.
+- Click a line to highlight the phrases it cites; press ▶ to hear exactly those seconds of audio.
 - Lost-audio warnings sit in the transcript where the speech went missing, with a button to play that stretch.
 - The clinician can correct, accept, remove or add lines. Every change is kept next to what the model proposed.
 - **Signing is blocked** until every 🔴 line has been decided and every lost-audio warning has been reviewed.
@@ -111,7 +113,8 @@ Judges must be able to see what is new, so this is explicit.
 - [x] Glasses audio capture on iPhone (`ios/`): records through the Ray-Ban Meta microphone over Bluetooth, straight to 16 kHz mono WAV
 - [x] SOAP drafting with citations, on Muse Spark Open (`scripts/draft_note.py`)
 - [ ] SOAP drafting with Muse Glimmer
-- [x] Verifier: citation, source, scope, coverage, lost audio (`scripts/verify_note.py`)
+- [x] Verifier: citation, source, scope, coverage, lost audio, recap (`scripts/verify_note.py`)
+- [x] Phrase-level citations: long turns split by sentence and pause, no re-transcription (`scripts/segment_turns.py`)
 - [x] One-command pipeline: audio to verified note (`scripts/run_pipeline.py`)
 - [x] Review-and-sign interface: cited turns, audio playback per turn, lost-audio warnings, edits with audit trail, blocked signature (`review/`, `scripts/review_server.py`)
 - [ ] Synthetic test consultations with expected facts
@@ -128,6 +131,8 @@ Judges must be able to see what is new, so this is explicit.
 - With the glasses, the patient's voice one metre away is much weaker than the wearer's. In a synthetic consultation the chief complaint ("me torcí el tobillo") never reached the transcript, and the note still passed every line check: a verifier can only check a note against what was transcribed. This led to the fifth check, which flags unanswered clinician questions and long silences so the clinician knows what to confirm, and to a simple practice that fixes it at the source: the clinician recaps the history aloud before examining.
 - A model-based check is not deterministic: the same line ("Temperatura 36.8 °C") passed on one run and was flagged on another. Numbers, sources and lost audio are therefore checked in code; the model is a second layer.
 - Listening back is part of the review. The transcript had "poquito pero con gelada" (unintelligible); the draft papered over it as "pudo caminar poquito pero con dificultad", and the scope check flagged that line 🔴. Playing the two cited turns from the review page, the patient's word was clearly "cojeando". The clinician corrected the line in seconds, and the signed record keeps both versions.
+- The clinician's recap turned out to be a second, clearer source for the patient's history. Comparing it with the patient's transcribed words caught errors no other check could see: in one consultation the transcript had the patient say "**no** tomé ni ibuprofeno" while she had said she *did* take one (the recap says "tomaste ibuprofeno"); in another, "en la mañana" against the recap's "en la farmacia". Both are flagged for the clinician to listen to and decide; neither version is picked automatically.
+- Model-based checks keep varying between runs, so the recap check lists every fact of the recap with a verdict and runs twice, merging what it finds. Across three runs on two consultations it found the same two conflicts every time and flagged nothing where the recap agreed.
 - Errors in the transcript itself cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
 
 ## Author

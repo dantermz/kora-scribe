@@ -15,6 +15,10 @@ Checks (the first two and the fourth are plain code; the third asks a model):
   5. Gaps      the transcript itself looks incomplete: a clinician question with no answer
                after it, or a long stretch of audio with no transcribed speech. The note can
                only be checked against what was transcribed, so lost speech must be flagged.
+  6. Recap     when the clinician recaps the history aloud, a model compares that recap with
+               what was transcribed from the patient. If they give a different value for the
+               same fact (where, when, which side, how much), every S line citing either turn
+               is flagged: one of the two was misheard, and the clinician decides which.
 
 Each line ends up green (supported), yellow (needs a look) or red (unsupported).
 Lines that cite only the patient are tagged as patient-reported. The note is never final until the clinician signs it.
@@ -146,7 +150,7 @@ Algunos turnos traen "before": el turno anterior de la otra persona, normalmente
 
 Marca cada línea con uno de estos veredictos:
 - "ok": dice lo mismo que sus turnos, sin agregar nada.
-- "adds": agrega algo que los turnos no dicen (un diagnóstico, grado, dosis, fecha, causa o interpretación).
+- "adds": agrega algo que los turnos no dicen (un diagnóstico, grado, dosis, fecha, causa o interpretación). También es "adds" cuando el turno tiene palabras que no tienen sentido (probable error de transcripción, por ejemplo "con gelada") y la línea las reemplaza por una interpretación (por ejemplo "con dificultad"): la línea debe dejar el hueco, no adivinar.
 
 No cuentan como agregado: las unidades estándar implícitas en la práctica clínica (°C para temperatura, mmHg para presión arterial, lpm para frecuencia cardiaca, kg para peso, mg/dL para glucosa, mg para dosis de medicamentos que se expresan en miligramos), escribir con cifras lo que se dijo con palabras, y abreviaturas médicas comunes. Sí cuenta una unidad que cambia el valor o que no es la habitual para esa medición.
 - "not_clinical": no aporta información clínica: plática personal o social, planes o eventos del paciente, o preguntas del paciente que no describen un síntoma ni un antecedente (por ejemplo "¿podré ir a mi fiesta?" o "¿puedo jugar el torneo?"). Lo que el médico respondió a esa pregunta sí puede ir en el plan.
@@ -220,6 +224,102 @@ def check_scope(lines: list[dict], turns: dict[str, dict]) -> tuple[dict[str, li
             hint = f", ¿quiso decir «{term['probably']}»?" if term.get("probably") else ""
             found.append(("yellow", f"Término dudoso: «{term.get('term', '?')}»{hint}"))
     return issues, meta
+
+
+RECAP_PROMPT = """Eres un revisor de transcripciones clínicas. Recibes la transcripción de una consulta: cada frase con su id, quién habla y su texto.
+
+Muchas veces el médico resume en voz alta lo que le contó el paciente (por ejemplo: "Entonces, dolor de cabeza en la nuca algunas mañanas, toma losartán de 50..."). La voz del paciente se oye más lejos y su transcripción puede tener errores; la del médico suele ser más clara.
+
+Haz esto paso por paso:
+1. Encuentra las frases del médico que resumen lo que refirió el paciente. Si no hay resumen, responde con listas vacías.
+2. Divide el resumen en datos sueltos (cada síntoma, medicamento, cifra, lugar, momento...).
+3. Para CADA dato del resumen, busca qué dijo el paciente sobre ese mismo dato y compáralos:
+   - "same": dicen lo mismo, aunque con otras palabras.
+   - "different": dan un valor distinto o contrario para el mismo dato (otro lugar, otro momento, otro lado, otra cifra, otra dosis, o uno afirma y el otro niega).
+   - "absent": el paciente no habló de ese dato en la transcripción.
+
+Responde SOLO con JSON válido:
+{"recap_ids": ["T8a"],
+ "facts": [{"fact": "dónde se midió la presión", "recap_id": "T8a", "recap_says": "cita textual breve",
+            "patient_id": "T7", "patient_says": "cita textual breve", "verdict": "different"}]}"""
+
+RECAP_RUNS = 2  # a model check is not deterministic; two independent passes, conflicts are merged
+
+
+def ask_recap(payload: list[dict]) -> tuple[dict | None, dict]:
+    client, model = make_client(load_env())
+    response = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        messages=[
+            {"role": "system", "content": RECAP_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+    )
+    usage = {"in": response.usage.prompt_tokens, "out": response.usage.completion_tokens} if response.usage else {}
+    try:
+        return extract_json(response.choices[0].message.content or ""), {"model": model, "tokens": usage}
+    except (ValueError, json.JSONDecodeError):
+        return None, {"model": model, "tokens": usage}
+
+
+STOPWORDS = {"para", "como", "pero", "que", "una", "uno", "este", "esta", "tiene", "dijo", "refiere", "salio"}
+
+
+def content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{4,}", plain(text)) if w not in STOPWORDS}
+
+
+def check_recap(lines: list[dict], ordered: list[dict], clinician: str) -> tuple[dict, dict, dict]:
+    """Compare the patient's transcribed words with the clinician's spoken recap.
+
+    The comparison is between the two transcript turns, not between the note and the recap,
+    so it holds whichever version the drafter chose. Returns (issues per line, turns to
+    compare per line, meta)."""
+    payload = [{"id": t["id"], "who": "médico" if t["speaker"] == clinician else "paciente", "text": t["text"]}
+               for t in ordered]
+    speaker = {t["id"]: t["speaker"] for t in ordered}
+    meta: dict = {"runs": 0, "recap_ids": [], "conflicts": [], "tokens": {"in": 0, "out": 0}}
+    seen = set()
+    for _ in range(RECAP_RUNS):
+        answer, run = ask_recap(payload)
+        meta["model"] = run["model"]
+        for k in ("in", "out"):
+            meta["tokens"][k] += run["tokens"].get(k, 0)
+        if answer is None:
+            continue
+        meta["runs"] += 1
+        for r in answer.get("recap_ids", []):
+            if speaker.get(r) == clinician and r not in meta["recap_ids"]:
+                meta["recap_ids"].append(r)
+        for f in answer.get("facts", []):
+            if (f.get("verdict") == "different" and speaker.get(f.get("recap_id")) == clinician
+                    and f.get("patient_id") in speaker and speaker[f["patient_id"]] != clinician
+                    and (f["patient_id"], f["recap_id"]) not in seen):
+                seen.add((f["patient_id"], f["recap_id"]))
+                meta["conflicts"].append(f)
+    if meta["runs"] == 0:
+        meta["error"] = "Recap check answer could not be parsed."
+    conflicts = meta["conflicts"]
+    issues: dict[str, list[tuple[str, str]]] = {}
+    related: dict[str, list[str]] = {}
+    s_lines = [l for l in lines if l["section"] == "S"]
+    for c in conflicts:
+        # A recap often covers several facts in one phrase, so citing the recap alone is not
+        # enough: flag the lines that cite the patient's turn, or, if none does, the lines that
+        # cite the recap and share content words with what the patient said.
+        targets = [l for l in s_lines if c["patient_id"] in l["cites"]]
+        if not targets:
+            said = content_words(c.get("patient_says", "")) | content_words(c.get("recap_says", ""))
+            targets = [l for l in s_lines if c["recap_id"] in l["cites"] and content_words(l["text"]) & said]
+        for line in targets:
+            issues.setdefault(line["id"], []).append((
+                "yellow",
+                f"El paciente dijo «{c.get('patient_says', '?')}» ({c['patient_id']}) y tu resumen dice "
+                f"«{c.get('recap_says', '?')}» ({c['recap_id']}). Escucha los dos y deja el dato correcto."))
+            related.setdefault(line["id"], []).extend(t for t in (c["patient_id"], c["recap_id"])
+                                                     if t not in line["cites"])
+    return issues, related, meta
 
 
 # Known slips: (written, probably meant). They can come from the speech-to-text model or
@@ -310,21 +410,31 @@ def main(note_path: Path) -> None:
 
     print(f"Verifying {len(lines)} lines · clinician is speaker {clinician}")
     scope_issues, scope_meta = check_scope(lines, turns)
+    ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
+    recap_issues, recap_related, recap_meta = check_recap(lines, ordered, clinician)
 
     for line in lines:
         issues = (
             check_citation(line, turns)
             + check_source(line["section"], line, turns, clinician)
             + scope_issues.get(line["id"], [])
+            + recap_issues.get(line["id"], [])
         )
+        if recap_related.get(line["id"]):
+            line["compare"] = recap_related[line["id"]]
         if not any("Término dudoso" in r for _, r in issues):
             issues += check_terms(line)
         line["issues"] = [{"level": level, "reason": reason} for level, reason in issues]
         # Patient-reported: what the line states comes from the patient. Citing the clinician's
         # question next to the answer (drafting rule 7) does not make it the clinician's finding.
-        content = [turns[c] for c in line["cites"] if c in turns
+        # The clinician's spoken recap of the history is also the patient's account, not a finding.
+        recap = set(recap_meta.get("recap_ids", []))
+        content = [turns[c] for c in line["cites"] if c in turns and c not in recap
                    and not (turns[c]["speaker"] == clinician and turns[c]["text"].strip().endswith("?"))]
-        line["patient_reported"] = bool(content) and all(t["speaker"] != clinician for t in content)
+        from_recap = any(c in recap for c in line["cites"])
+        line["patient_reported"] = (line["section"] == "S"
+                                    and all(t["speaker"] != clinician for t in content)
+                                    and bool(content or from_recap))
         line["status"] = max((level for level, _ in issues), key=RANK.get, default="green")
 
     # Small talk the scope check marked as non-clinical does not count toward coverage
@@ -335,7 +445,6 @@ def main(note_path: Path) -> None:
         for section in SECTIONS
     }
     missing = check_coverage(counted)
-    ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
     gaps = check_gaps(ordered, clinician)
     if any(g["kind"] == "unanswered_question" for g in gaps):
         missing.append("Respuestas del paciente (hay preguntas sin respuesta registrada)")
@@ -349,6 +458,7 @@ def main(note_path: Path) -> None:
         "coverage_missing": missing,
         "transcript_gaps": gaps,
         "scope_check": scope_meta,
+        "recap_check": recap_meta,
         "lines": lines,
     }
     out = note_path.with_name(note_path.name.replace(".note.json", ".verification.json"))
@@ -373,6 +483,11 @@ def main(note_path: Path) -> None:
     print(f"Status: {result['status']} · the clinician must review and sign before the note is final")
     if "tokens" in scope_meta:
         print(f"Scope check tokens: {scope_meta['tokens']['in']} in · {scope_meta['tokens']['out']} out")
+    if recap_meta.get("recap_ids") is not None:
+        found = ", ".join(recap_meta["recap_ids"]) or "none"
+        print(f"Clinician recap found in: {found}")
+        for c in recap_meta.get("conflicts", []):
+            print(f"  🟡 patient {c['patient_id']} «{c.get('patient_says')}» vs recap {c['recap_id']} «{c.get('recap_says')}»")
     print(f"Saved {out.name}")
 
 
