@@ -9,7 +9,7 @@ Checks (the first two and the fourth are plain code; the third asks a model):
   1. Citation  every cited turn exists, and every number in the line appears in those turns.
   2. Source    O, A and P lines must cite the clinician; S lines that cite only the
                patient are kept but labelled as patient-reported.
-  3. Scope     Muse Spark Open checks that no line says more than its turns, and flags
+  3. Scope     Muse Spark Open (two passes, merged) checks that no line says more than its turns, and flags
                non-clinical lines and doubtful medical terms.
   4. Coverage  the note has the minimum sections a general consultation needs.
   5. Gaps      the transcript itself looks incomplete: a clinician question with no answer
@@ -146,6 +146,8 @@ def check_source(section: str, line: dict, turns: dict[str, dict], clinician: st
 
 SCOPE_PROMPT = """Eres un revisor de notas clínicas. Para cada línea recibes su texto y los turnos de la transcripción que cita. No juzgas si la medicina es correcta: solo si la línea es fiel a lo que se dijo.
 
+Algunos turnos traen "same_turn": las frases que la misma persona dijo justo antes o después, en el mismo turno. Úsalas para entender una frase cortada: si el turno citado es un fragmento o un titubeo (por ejemplo "si es una semana" justo antes de "si en una semana no mejora...") y la línea lo convierte en una indicación o un dato, es "adds".
+
 Algunos turnos traen "before": el turno anterior de la otra persona, normalmente la pregunta a la que responde. Úsalo para interpretar respuestas cortas: si el médico preguntó "¿Eres alérgica a algún medicamento?" y la respuesta fue "No, ninguno", la línea "Niega alergia a medicamentos" es fiel ("ok").
 
 Marca cada línea con uno de estos veredictos:
@@ -170,15 +172,27 @@ SCOPE_LABEL = {
 }
 
 
+SCOPE_RUNS = 2  # the model check varies between runs; two passes, flags are merged
+
+
 def check_scope(lines: list[dict], turns: dict[str, dict]) -> tuple[dict[str, list[tuple[str, str]]], dict]:
     ordered = sorted(turns.values(), key=lambda t: (t.get("start_ms") or 0))
     previous = {t["id"]: ordered[i - 1] for i, t in enumerate(ordered) if i > 0}
+    following = {t["id"]: ordered[i + 1] for i, t in enumerate(ordered[:-1])}
 
     def with_context(turn_id: str) -> dict:
-        item = {"id": turn_id, "text": turns[turn_id]["text"]}
+        turn = turns[turn_id]
+        item = {"id": turn_id, "text": turn["text"]}
         before = previous.get(turn_id)
-        if before and before["speaker"] != turns[turn_id]["speaker"]:
+        if before and before["speaker"] != turn["speaker"]:
             item["before"] = {"id": before["id"], "text": before["text"]}
+        # A phrase cut out of a longer turn: show what the speaker said right before and after,
+        # so a false start ("si es una semana") is read as part of the full sentence.
+        if "turn" in turn:
+            same = [t for t in (previous.get(turn_id), following.get(turn_id))
+                    if t and t.get("turn") == turn["turn"]]
+            if same:
+                item["same_turn"] = [{"id": t["id"], "text": t["text"]} for t in same]
         return item
 
     payload = [
@@ -191,38 +205,46 @@ def check_scope(lines: list[dict], turns: dict[str, dict]) -> tuple[dict[str, li
         for line in lines
     ]
     client, model = make_client(load_env(), "VERIFY")
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0,
-        messages=[
-            {"role": "system", "content": SCOPE_PROMPT},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-    )
-    raw = response.choices[0].message.content or ""
-    meta = {"model": model}
-    if response.usage:
-        meta["tokens"] = {"in": response.usage.prompt_tokens, "out": response.usage.completion_tokens}
-    try:
-        answer = extract_json(raw)
-        verdicts = answer.get("lines", [])
-        terms = answer.get("doubtful_terms", [])
-    except (ValueError, json.JSONDecodeError):
+    meta: dict = {"model": model, "runs": 0, "tokens": {"in": 0, "out": 0}}
+    issues: dict[str, list[tuple[str, str]]] = {}
+    seen: set[tuple[str, str]] = set()
+
+    def add(line_id: str, level: str, kind: str, reason: str) -> None:
+        if (line_id, kind) in seen:
+            return
+        seen.add((line_id, kind))
+        issues.setdefault(line_id, []).append((level, reason))
+
+    for _ in range(SCOPE_RUNS):
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0,
+            messages=[
+                {"role": "system", "content": SCOPE_PROMPT},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+        )
+        if response.usage:
+            meta["tokens"]["in"] += response.usage.prompt_tokens
+            meta["tokens"]["out"] += response.usage.completion_tokens
+        try:
+            answer = extract_json(response.choices[0].message.content or "")
+        except (ValueError, json.JSONDecodeError):
+            continue
+        meta["runs"] += 1
+        for item in answer.get("lines", []):
+            level = SCOPE_LEVEL.get(item.get("verdict"))
+            if level:
+                reason = item.get("reason", "").strip()
+                label = SCOPE_LABEL[item["verdict"]]
+                add(item.get("id"), level, item["verdict"], f"{label}: {reason}" if reason else label)
+        for term in answer.get("doubtful_terms", []):
+            hint = f", ¿quiso decir «{term['probably']}»?" if term.get("probably") else ""
+            add(term.get("id"), "yellow", "doubtful_term", f"Término dudoso: «{term.get('term', '?')}»{hint}")
+
+    if meta["runs"] == 0:
         meta["error"] = "Scope check answer could not be parsed; every line needs a manual look."
         return {line["id"]: [("yellow", "El revisor de alcance no respondió; revisar a mano.")] for line in lines}, meta
-
-    issues: dict[str, list[tuple[str, str]]] = {}
-    for item in verdicts:
-        level = SCOPE_LEVEL.get(item.get("verdict"))
-        if level:
-            reason = item.get("reason", "").strip()
-            label = SCOPE_LABEL[item["verdict"]]
-            issues.setdefault(item.get("id"), []).append((level, f"{label}: {reason}" if reason else label))
-    for term in terms:
-        found = issues.setdefault(term.get("id"), [])
-        if not any("Término dudoso" in reason for _, reason in found):
-            hint = f", ¿quiso decir «{term['probably']}»?" if term.get("probably") else ""
-            found.append(("yellow", f"Término dudoso: «{term.get('term', '?')}»{hint}"))
     return issues, meta
 
 
@@ -344,7 +366,9 @@ def check_terms(line: dict) -> list[tuple[str, str]]:
 COVERAGE = {
     # Age and allergies alone are not a reason for the visit: S needs at least one other line.
     "Motivo de consulta": lambda note: any(
-        not re.search(r"\banos\b|\bedad\b|alerg", plain(l["text"])) for l in note["S"]
+        not re.search(r"\banos\b|\bedad\b|alerg", plain(l["text"]))
+        and plain(l["text"]).replace("[ininteligible]", "").strip(" .,;")  # a line that is only a gap says nothing
+        for l in note["S"]
     ),
     "Alergias": lambda note: any("alerg" in plain(l["text"]) for s in SECTIONS for l in note[s]),
     "Signos vitales": lambda note: any(

@@ -10,7 +10,9 @@ enough to cut a long turn into phrases with their own start and end times, witho
 transcribing again.
 
 A turn longer than MAX_WORDS is cut at sentence punctuation, or at a pause of PAUSE_MS
-or more where there is no punctuation nearby (dictated recaps often come without any).
+or more where there is no punctuation in the next few words (dictated recaps often come
+without any). A pause right before "anterior," is the speaker taking a breath mid-phrase,
+not the end of one, so it is not cut.
 Phrases keep the turn they came from: T13 becomes T13a, T13b, ... with "turn": "T13".
 Short turns are left as they are.
 
@@ -31,6 +33,7 @@ PAUSE_MS = 900     # silence between words that counts as a phrase break
 LAG_MS = 500       # a word shows up in the partials about this long after it is spoken
 LOOKAHEAD = 6      # do not cut at a pause if a sentence ends within this many words
 SENTENCE_END = re.compile(r"[.?!]$")
+CLAUSE_END = re.compile(r"[.?!,;:]$")  # any punctuation: the speaker's sentence goes on nearby
 
 
 def fmt(ms: int | None) -> str:
@@ -103,7 +106,7 @@ def split_turn(turn: dict) -> list[dict]:
         sentence_end = SENTENCE_END.search(word) and len(phrases[-1]) >= 2
         ahead = words[i + 1:i + 1 + LOOKAHEAD]
         pause = (words[i + 1][1] - at >= PAUSE_MS and len(phrases[-1]) >= 3
-                 and not any(SENTENCE_END.search(w) for w, _ in ahead))
+                 and not any(CLAUSE_END.search(w) for w, _ in ahead))
         if sentence_end or pause:
             phrases.append([])
 
