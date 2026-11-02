@@ -51,7 +51,7 @@ Following the verification-layer pattern from Meta's hackathon agent workshops, 
 | # | Check | How | What it catches |
 |---|---|---|---|
 | 1 | **Verbatim citation** | Code | A line citing words that do not appear in the transcript |
-| 2 | **Source** | Code | Subjective lines may cite the patient; Objective, Assessment and Plan lines must cite the clinician. Catches a medication the patient *mentioned* written as if the doctor *prescribed* it |
+| 2 | **Source and section** | Code | Subjective lines may cite the patient; Objective, Assessment and Plan lines must cite the clinician. Catches a medication the patient *mentioned* written as if the doctor *prescribed* it. Also flags an instruction filed under Assessment, or a bare diagnosis filed under Plan (written with Muse Code) |
 | 3 | **Scope** | Model (Muse Spark Open), two passes | A line that says more than its citation, e.g. "patient reports chest pain" upgraded to "angina" |
 | 4 | **Coverage** | Checklist per visit type | A note that looks complete but is missing vitals, allergies, or the plan |
 | 5 | **Lost audio** | Code | A clinician question with no recorded answer, or a long stretch with no transcribed speech: signs that the patient said something the transcript never captured |
@@ -112,7 +112,7 @@ Then point the drafter at it in `.env` (see `.env.example`): `DRAFT_BASE_URL`, `
 | Muse Voice Transcribe (Meta Model API) | Speech to text |
 | Muse Glimmer (open weights, on Modal GPU) | SOAP note drafting |
 | Muse Spark Open (open weights, on Baseten) | Verifier (scope and recap checks), and the baseline drafter in the evaluation |
-| Muse Code | Development |
+| Muse Code | Built the section-placement check (`check_section` in `scripts/verify_note.py`) and its tests (`tests/test_section_check.py`), test first |
 
 Note generation and verification run on open-weight models. Mexico's health-record regulation (NOM-024) pushes toward data sovereignty, and clinical notes are among the most sensitive records a system holds, so a deployment path that does not depend on a closed hosted API matters.
 
@@ -137,7 +137,7 @@ Everything below was built during the hackathon (Oct 26 to Nov 4, 2026).
 - [x] Glasses audio capture on iPhone (`ios/`): records through the Ray-Ban Meta microphone over Bluetooth, straight to 16 kHz mono WAV
 - [x] SOAP drafting with citations (`scripts/draft_note.py`), on Muse Glimmer self-hosted on Modal, or Muse Spark Open
 - [x] Evaluation of both drafters against expected facts and traps (`eval/eval.py`)
-- [x] Verifier: citation, source, scope, coverage, lost audio, recap (`scripts/verify_note.py`)
+- [x] Verifier: citation, source and section, scope, coverage, lost audio, recap (`scripts/verify_note.py`; the section check was written with Muse Code, `tests/test_section_check.py`)
 - [x] Phrase-level citations: long turns split by sentence and pause, no re-transcription (`scripts/segment_turns.py`)
 - [x] One-command pipeline: audio to verified note (`scripts/run_pipeline.py`)
 - [x] Review-and-sign interface: cited turns, audio playback per turn, lost-audio warnings, edits with audit trail, blocked signature (`review/`, `scripts/review_server.py`)
@@ -162,7 +162,6 @@ Everything below was built during the hackathon (Oct 26 to Nov 4, 2026).
 
 ## What's next
 
-- Detect lines written in the wrong section (in one run Glimmer put the clinician's "not on Saturday" under Assessment instead of Plan; no check catches that yet).
 - More synthetic consultations, recorded with several voices and distances, to grow the evaluation set.
 - Export the signed note to an electronic health record through a standard interface (FHIR).
 - A pilot with clinicians, measuring time to a signed note and how many lines they correct.

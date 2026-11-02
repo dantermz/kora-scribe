@@ -363,6 +363,59 @@ def check_terms(line: dict) -> list[tuple[str, str]]:
     return issues
 
 
+# Plan or instruction language: infinitives, nouns and phrases used in P.
+# Compared against plain() text, so matching is accent-insensitive lower case.
+PLAN_WORDS = re.compile(
+    r"\b(usar|aplicar|tomar|reposo|regresar|venda|hielo|mg|disminuir|evitar|solicitar|"
+    r"indicar|iniciar|suspender|continuar|aumentar|incrementar|cita|curacion|dieta)\b"
+)
+PLAN_ELEVADO = re.compile(r"\belevad[oa]s?\b")  # pie elevado / pierna elevada
+PLAN_PHRASES = (
+    re.compile(r"\bno\W+jugar\b"),
+    re.compile(r"\bsabado\W+no\b"),
+    re.compile(r"\bcontrol\W+en\b"),
+    re.compile(r"\bcada\W+\w+\W+horas\b"),  # cada 8 horas / cada ocho horas
+)
+
+
+def has_plan_language(text: str) -> bool:
+    text = plain(text)
+    return bool(PLAN_WORDS.search(text) or PLAN_ELEVADO.search(text)
+                or any(p.search(text) for p in PLAN_PHRASES))
+
+
+# Diagnosis nouns (plain form, no accents) for the narrowed P rule: a P line is
+# only flagged when it positively looks like a diagnosis, never for merely
+# lacking words from the plan list.
+ES_UN = re.compile(r"^\s*es\s+un[oa]s?\b")  # Es un esguince / Es una fractura
+DIAGNOSIS = re.compile(
+    r"\b(esguince|fractura|luxacion|desgarro|contusion|quemadura|herida|tendinitis|"
+    r"lumbalgia|cervicalgia|dorsalgia|ciatica|artritis|artrosis|hipertension|hipotension|"
+    r"diabetes|prediabetes|dislipidemia|hipercolesterolemia|obesidad|sobrepeso|anemia|"
+    r"desnutricion|infeccion|faringitis|amigdalitis|otitis|sinusitis|bronquitis|neumonia|"
+    r"tuberculosis|gripe|influenza|covid|resfriado|resfrio|gastritis|gastroenteritis|"
+    r"colitis|apendicitis|colecistitis|hepatitis|pancreatitis|reflujo|ulcera|dermatitis|"
+    r"eczema|eccema|psoriasis|celulitis|absceso|urticaria|micosis|impetigo|conjuntivitis|"
+    r"blefaritis|glaucoma|catarata|cistitis|pielonefritis|prostatitis|vaginitis|"
+    r"candidiasis|migrana|epilepsia|ansiedad|depresion|insomnio|asma|epoc|rinitis|"
+    r"hernia|tumor|cancer|carcinoma|deshidratacion|insuficiencia|arritmia|infarto|"
+    r"angina|hipotiroidismo|hipertiroidismo)\b"
+)
+
+
+def check_section(line: dict) -> list[tuple[str, str]]:
+    """Flag a line written in the wrong SOAP section. Plain code, no model call."""
+    section = line.get("section", "")
+    text = line.get("text", "")
+    if section == "A" and has_plan_language(text):
+        return [("yellow", "Parece una indicación del plan: ¿va en P?")]
+    if section == "P" and not has_plan_language(text):
+        stated = plain(text)
+        if ES_UN.match(stated) or DIAGNOSIS.search(stated):
+            return [("yellow", "Parece una impresión diagnóstica: ¿va en A?")]
+    return []
+
+
 COVERAGE = {
     # Age and allergies alone are not a reason for the visit: S needs at least one other line.
     "Motivo de consulta": lambda note: any(
@@ -448,6 +501,7 @@ def main(note_path: Path) -> None:
             line["compare"] = recap_related[line["id"]]
         if not any("Término dudoso" in r for _, r in issues):
             issues += check_terms(line)
+        issues += check_section(line)
         line["issues"] = [{"level": level, "reason": reason} for level, reason in issues]
         # Patient-reported: what the line states comes from the patient. Citing the clinician's
         # question next to the answer (drafting rule 7) does not make it the clinician's finding.
