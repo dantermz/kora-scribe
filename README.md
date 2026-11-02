@@ -3,10 +3,12 @@
 ![Meta Global AI Developer Hackathon 2026](https://img.shields.io/badge/Meta_Global_AI_Hackathon-2026-0866FF)
 ![Track](https://img.shields.io/badge/Track-Startup-6E40C9)
 ![Models](https://img.shields.io/badge/Models-Muse_Glimmer_·_Muse_Spark_Open-1F883D)
-![Status](https://img.shields.io/badge/Status-In_progress-F59E0B)
+![Demo video](https://img.shields.io/badge/Demo-video-FF0000)
 ![License: MIT](https://img.shields.io/badge/License-MIT-lightgrey)
 
-**Hands-free clinical scribe for public-sector doctors in Mexico.** *(Work in progress: this README describes the design; see Status for what is built so far.)*
+**Hands-free clinical scribe for public-sector doctors in Mexico.**
+
+▶️ **Demo video (3 min):** https://youtu.be/2ZvitbN4au0
 
 Ray-Ban Meta glasses capture the consultation, Muse Voice Transcribe turns it into text, Muse Glimmer drafts a SOAP note, and a verifier agent checks every line against the transcript before the doctor reviews and signs.
 
@@ -129,7 +131,7 @@ Judges must be able to see what is new, so this is explicit.
 
 ## Status
 
-🚧 In progress. This README is the specification and will be updated as each part ships.
+Everything below was built during the hackathon (Oct 26 to Nov 4, 2026).
 
 - [x] Transcription test with Muse Voice Transcribe: Spanish, speaker diarization, turn IDs and timestamps (`scripts/transcribe_file.py`)
 - [x] Glasses audio capture on iPhone (`ios/`): records through the Ray-Ban Meta microphone over Bluetooth, straight to 16 kHz mono WAV
@@ -140,7 +142,7 @@ Judges must be able to see what is new, so this is explicit.
 - [x] One-command pipeline: audio to verified note (`scripts/run_pipeline.py`)
 - [x] Review-and-sign interface: cited turns, audio playback per turn, lost-audio warnings, edits with audit trail, blocked signature (`review/`, `scripts/review_server.py`)
 - [x] Synthetic test consultations with expected facts (`eval/dictados_sinteticos.md`, `eval/cases.json`)
-- [ ] Demo video
+- [x] Demo video: https://youtu.be/2ZvitbN4au0
 
 ### Early findings
 
@@ -157,6 +159,13 @@ Judges must be able to see what is new, so this is explicit.
 - Model-based checks keep varying between runs, so the recap check lists every fact of the recap with a verdict and runs twice, merging what it finds. Across three runs on two consultations it found the same two conflicts every time and flagged nothing where the recap agreed.
 - Muse Glimmer invents too, just differently. In one consultation the clinician stumbled ("si es una semana…" before "si en una semana no mejora…"); Glimmer turned that false start into "reposo deportivo por una semana", replacing the two weeks the clinician actually prescribed. The scope check missed it once, so it now sees the rest of a cut sentence and runs twice: the line was flagged 🔴 in four runs out of four. Spark Open's failure mode was filling in a word it could not understand; Glimmer's was reading a stumble as an order. Both are why the verifier is a different model from the drafter, and why the clinician signs.
 - Errors in the transcript itself cannot be caught by checking the note against the transcript. That is why the clinician's review and signature stay mandatory.
+
+## What's next
+
+- Detect lines written in the wrong section (in one run Glimmer put the clinician's "not on Saturday" under Assessment instead of Plan; no check catches that yet).
+- More synthetic consultations, recorded with several voices and distances, to grow the evaluation set.
+- Export the signed note to an electronic health record through a standard interface (FHIR).
+- A pilot with clinicians, measuring time to a signed note and how many lines they correct.
 
 ## Author
 
